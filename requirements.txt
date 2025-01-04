@@ -1,0 +1,5 @@
+spotipy==2.23.0
+yt-dlp==2023.9.24
+mutagen==1.45.1
+requests==2.31.0
+colorama==0.4.6
