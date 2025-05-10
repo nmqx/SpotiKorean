@@ -6,12 +6,15 @@ import spotipy
 import yt_dlp
 from yt_dlp import YoutubeDL
 from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TDRC, TCON, APIC, TRCK, TYER, error
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, TDRC, TCON, APIC, TRCK, TYER, TBPM, COMM, error
 from spotipy.oauth2 import SpotifyClientCredentials
 from colorama import init, Fore, Style
 import keyboard
 import difflib
 import threading
+import imageio_ffmpeg
+import librosa
+import numpy as np
 
 init(autoreset=True)
 
@@ -30,6 +33,13 @@ def search_and_download_mp3(query, output_path):
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+
+    ffmpeg_executable_path = None
+    try:
+        ffmpeg_executable_path = imageio_ffmpeg.get_ffmpeg_exe()
+        print(Fore.BLUE + f"Using FFmpeg from: {ffmpeg_executable_path}")
+    except Exception as e:
+        print(Fore.YELLOW + f"Could not get FFmpeg path from imageio-ffmpeg: {e}. Relying on system PATH.")
 
     options = {
         'format': 'bestaudio/best',
@@ -57,6 +67,9 @@ def search_and_download_mp3(query, output_path):
         'quiet': False,
         'no_warnings': True,
     }
+    
+    if ffmpeg_executable_path:
+        options['ffmpeg_location'] = ffmpeg_executable_path
 
     manual_spotify_link = None
     youtube_search_query = query
@@ -193,7 +206,7 @@ def search_song_on_spotify(query_or_video_title, channel_if_no_link, manual_spot
                 if score > best_score:
                     best_score, best_match = score, track_item
             
-            if best_match and best_score > 0.5:
+            if best_match and best_score > 0.2:
                 print(Fore.BLUE + f"Best Spotify match (score: {best_score:.2f}): {best_match['name']}")
                 return extract_spotify_metadata(best_match)
             else:
@@ -207,7 +220,7 @@ def add_metadata_to_mp3(mp3_path, metadata):
         audio = MP3(mp3_path, ID3=ID3)
         if audio.tags is None: audio.add_tags()
 
-        for tag_key in ['TIT2', 'TPE1', 'TALB', 'TDRC', 'TYER', 'TCON', 'TRCK', 'APIC']:
+        for tag_key in ['TIT2', 'TPE1', 'TALB', 'TDRC', 'TYER', 'TCON', 'TRCK', 'APIC', 'TBPM', 'COMM']:
             audio.tags.delall(tag_key)
 
         if metadata.get('title'): audio.tags.add(TIT2(encoding=3, text=metadata['title']))
@@ -246,6 +259,25 @@ def add_metadata_to_mp3(mp3_path, metadata):
         else:
             print(Fore.YELLOW + "No cover URL in metadata.")
 
+        print(Fore.BLUE + f"Attempting to calculate BPM for {mp3_path}...")
+        try:
+            y, sr = librosa.load(mp3_path, sr=None)
+            tempo_array = librosa.feature.rhythm.tempo(y=y, sr=sr)
+            
+            if tempo_array.size > 0:
+                estimated_bpm = tempo_array[0]
+                bpm_to_tag = int(round(estimated_bpm))
+                print(Fore.GREEN + f"Estimated BPM: {bpm_to_tag}")
+                audio.tags.add(TBPM(encoding=3, text=str(bpm_to_tag)))
+            else:
+                print(Fore.YELLOW + "Could not estimate BPM (empty tempo array).")
+
+        except FileNotFoundError:
+            print(Fore.RED + f"Error calculating BPM: MP3 file not found at {mp3_path}")
+        except Exception as e:
+            print(Fore.RED + f"Error calculating BPM for {mp3_path}: {e}")
+            print(Fore.YELLOW + "BPM detection might fail for very short tracks or non-musical content.")
+
         audio.save(v2_version=3)
         print(Fore.GREEN + "Metadata successfully updated in MP3 file.")
     except error as e:
@@ -282,9 +314,9 @@ def main_loop(current_output_path):
             metadata = search_song_on_spotify(video_title, channel, manual_spotify_link)
             if metadata:
                 add_metadata_to_mp3(mp3_path, metadata)
-                print(Fore.GREEN + "MP3 downloaded and metadata applied successfully!")
+                print(Fore.GREEN + "MP3 downloaded and metadata (including BPM attempt) applied successfully!")
             else:
-                print(Fore.YELLOW + "MP3 saved. Spotify metadata not found/matched.")
+                print(Fore.YELLOW + "MP3 saved. Spotify metadata not found/matched. BPM not calculated.")
         elif mp3_path:
             print(Fore.RED + f"Error: MP3 path ({mp3_path}) returned but file not found. Download might have failed.")
         else:
@@ -294,7 +326,7 @@ def main_loop(current_output_path):
     print(Fore.CYAN + "Program finished.")
 
 if __name__ == "__main__":
-    print(Fore.CYAN + Style.BRIGHT + "Spotify YouTube MP3 Downloader by khmertrap and nmqx")
+    print(Fore.CYAN + Style.BRIGHT + "Spotify YouTube MP3 Downloader CLI - Made by Nmqx & Khmertrap (v1.5 with BPM)")
     print(Fore.YELLOW + "Press 'Esc' (then Enter if at prompt) or 'Ctrl+C' to exit.")
     
     output_path_input = input(Fore.YELLOW + f"Output folder (default: {default_output_path}):\n").strip()
