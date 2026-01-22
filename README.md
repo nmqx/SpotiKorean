@@ -1,4 +1,4 @@
-# spotikorean
+# Spotikorean
 
 A tool that lets you, by simply looking up a song, download the MP3 and automatically tag it with full metadata from Spotify.
 
