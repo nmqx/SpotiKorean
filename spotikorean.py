@@ -18,8 +18,8 @@ import numpy as np
 
 init(autoreset=True)
 
-CLIENT_ID = 'fb2c1a715c394bfd9df77f91df996f72'
-CLIENT_SECRET = '759c548fe96847669dba7eb35e8fa0d9'
+CLIENT_ID = ''
+CLIENT_SECRET = ''
 
 auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
 sp = spotipy.Spotify(auth_manager=auth_manager)
